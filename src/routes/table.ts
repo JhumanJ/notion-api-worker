@@ -1,5 +1,10 @@
-import { fetchPageById, fetchTableData, fetchNotionUsers } from "../api/notion";
-import { parsePageId, getNotionValue } from "../api/utils";
+import {
+  fetchPageById,
+  fetchTableData,
+  fetchNotionUsers,
+  fetchBlocks,
+} from "../api/notion";
+import { parsePageId, getNotionValue, getRecordValue } from "../api/utils";
 import {
   RowContentType,
   CollectionType,
@@ -16,45 +21,63 @@ export const getTableData = async (
   blockData?: BlockType,
   raw?: boolean
 ) => {
+  const collectionValue = getRecordValue<any>(collection);
   const table = await fetchTableData(
-    collection.value.id,
+    collectionValue.id,
     collectionViewId,
     notionToken,
     blockData
   );
 
-  const collectionRows = collection.value.schema;
+  const collectionRows = collectionValue.schema || {};
   const collectionColKeys = Object.keys(collectionRows);
 
   // Prefer reducer results if available; otherwise, fall back to scanning recordMap
   let tableArr: RowType[];
   const recordMapBlock = (table as any).recordMap && (table as any).recordMap.block ? (table as any).recordMap.block : {};
-  if (
+  const reducerBlockIds =
     table.result &&
     (table as any).result.reducerResults &&
     (table as any).result.reducerResults.collection_group_results &&
     Array.isArray((table as any).result.reducerResults.collection_group_results.blockIds)
+      ? (table as any).result.reducerResults.collection_group_results.blockIds
+      : [];
+
+  let resolvedRecordMapBlock = recordMapBlock;
+  if (Object.keys(resolvedRecordMapBlock).length === 0 && reducerBlockIds.length > 0) {
+    const blocks = await fetchBlocks(reducerBlockIds, notionToken, blockData);
+    resolvedRecordMapBlock =
+      (blocks as any).recordMap && (blocks as any).recordMap.block
+        ? (blocks as any).recordMap.block
+        : {};
+  }
+
+  if (
+    reducerBlockIds.length > 0
   ) {
-    tableArr = (table as any).result.reducerResults.collection_group_results.blockIds
-      .map((id: string) => (recordMapBlock as any)[id])
+    tableArr = reducerBlockIds
+      .map((id: string) => (resolvedRecordMapBlock as any)[id])
       .filter(Boolean);
   } else {
     // Fallback: derive from recordMap
-    tableArr = Object.values(recordMapBlock as any);
+    tableArr = Object.values(resolvedRecordMapBlock as any);
   }
 
   if (!Array.isArray(tableArr) || tableArr.length === 0) {
     const summary = {
       hasRecordMap: Boolean((table as any).recordMap),
-      blockKeys: Object.keys(recordMapBlock || {}).slice(0, 5),
+      blockKeys: Object.keys(resolvedRecordMapBlock || {}).slice(0, 5),
       hasReducer: Boolean((table as any).result && (table as any).result.reducerResults),
+      reducerBlockIds: reducerBlockIds.slice(0, 5),
     };
     throw new Error(`No table rows found. Response summary: ${JSON.stringify(summary)}`);
   }
 
   const tableData = tableArr.filter(
-    (b) =>
-      b.value && b.value.properties && b.value.parent_id === collection.value.id
+    (b) => {
+      const blockValue = getRecordValue<any>(b);
+      return blockValue && blockValue.properties && blockValue.parent_id === collectionValue.id;
+    }
   );
 
   type Row = { id: string; [key: string]: RowContentType };
@@ -62,10 +85,11 @@ export const getTableData = async (
   const rows: Row[] = [];
 
   for (const td of tableData) {
-    let row: Row = { id: td.value.id };
+    const rowValue = getRecordValue<any>(td);
+    let row: Row = { id: rowValue.id };
 
     for (const key of collectionColKeys) {
-      const val = td.value.properties[key];
+      const val = rowValue.properties[key];
       if (val) {
         const schema = collectionRows[key];
         row[schema.name] = raw ? val : getNotionValue(val, schema.type, td);
@@ -92,21 +116,20 @@ export async function tableRoute(req: HandlerRequest) {
       401
     );
 
-  const collection = Object.keys(page.recordMap.collection).map(
-    (k) => page.recordMap.collection[k]
-  )[0];
+  const collectionId = Object.keys(page.recordMap.collection)[0];
+  const collection = page.recordMap.collection[collectionId] as CollectionType;
+  const collectionValue = getRecordValue<any>(collection);
+  if (!collectionValue.id) {
+    collectionValue.id = collectionId;
+  }
 
-  const collectionView: {
-    value: { id: CollectionType["value"]["id"] };
-  } = Object.keys(page.recordMap.collection_view).map(
-    (k) => page.recordMap.collection_view[k]
-  )[0];
+  const collectionViewId = Object.keys(page.recordMap.collection_view)[0];
 
   const blockData = page.recordMap.block[pageId!];
 
   const { rows } = await getTableData(
     collection,
-    collectionView.value.id,
+    collectionViewId,
     req.notionToken,
     blockData
   );

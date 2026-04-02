@@ -1,5 +1,5 @@
 import { fetchPageById, fetchBlocks } from "../api/notion";
-import { parsePageId } from "../api/utils";
+import { parsePageId, getRecordValue } from "../api/utils";
 import { createResponse } from "../response";
 import { getTableData } from "./table";
 import { BlockType, CollectionType, HandlerRequest } from "../api/types";
@@ -21,9 +21,10 @@ export async function pageRoute(req: HandlerRequest) {
 
     const pendingBlocks = allBlockKeys.flatMap((blockId) => {
       const block = allBlocks[blockId];
-      const content = block.value && block.value.content;
+      const blockValue = getRecordValue<any>(block);
+      const content = blockValue && blockValue.content;
 
-      if (!content || (block.value.type === "page" && blockId !== pageId!)) {
+      if (!content || (blockValue.type === "page" && blockId !== pageId!)) {
         // skips pages other than the requested page
         return [];
       }
@@ -55,41 +56,41 @@ export async function pageRoute(req: HandlerRequest) {
   if (collection && collectionView) {
     const pendingCollections = allBlockKeys.flatMap((blockId) => {
       const block = allBlocks[blockId];
+      const blockValue = getRecordValue<any>(block);
 
-      return (block.value && block.value.type === "collection_view") ? [block.value.id] : [];
+      return blockValue && blockValue.type === "collection_view" ? [blockValue.id] : [];
     });
 
     for (let b of pendingCollections) {
       const collPage = await fetchPageById(b!, req.notionToken);
 
-      const coll = Object.keys(collPage.recordMap.collection).map(
-        (k) => collPage.recordMap.collection[k]
-      )[0];
+      const collId = Object.keys(collPage.recordMap.collection)[0];
+      const coll = collPage.recordMap.collection[collId] as CollectionType;
+      const collValue = getRecordValue<any>(coll);
+      if (!collValue.id) {
+        collValue.id = collId;
+      }
 
-      const collView: {
-        value: { id: CollectionType["value"]["id"] };
-      } = Object.keys(collPage.recordMap.collection_view).map(
-        (k) => collPage.recordMap.collection_view[k]
-      )[0];
+      const collViewId = Object.keys(collPage.recordMap.collection_view)[0];
 
       const { rows, schema } = await getTableData(
         coll,
-        collView.value.id,
+        collViewId,
         req.notionToken,
         rootBlock,
         true
       );
 
-      const viewIds = (allBlocks[b] as any).value.view_ids as string[];
+      const viewIds = getRecordValue<any>(allBlocks[b]).view_ids as string[];
 
       allBlocks[b] = {
         ...allBlocks[b],
         collection: {
-          title: coll.value.name,
+          title: collValue.name,
           schema,
           types: viewIds.map((id) => {
             const col = collPage.recordMap.collection_view[id];
-            return col ? col.value : undefined;
+            return col ? getRecordValue(col) : undefined;
           }),
           data: rows,
         },

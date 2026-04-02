@@ -4,9 +4,9 @@
   "main": "dist/index.js",
   "license": "MIT",
   "scripts": {
-    "build": "webpack",
+    "build": "NODE_OPTIONS=--openssl-legacy-provider webpack",
     "dev": "wrangler dev",
-    "deploy": "wrangler deploy --env production"
+    "deploy": "NODE_OPTIONS=--openssl-legacy-provider wrangler deploy --env production"
   },
   "dependencies": {
     "tiny-request-router": "^1.2.2"

@@ -168,8 +168,10 @@ export const fetchTableData = async (
   notionToken?: string,
   blockData?: BlockType
 ): Promise<CollectionData> => {
-  const spaceId = blockData?.value?.space_id;
-  const siteId = blockData?.value?.format?.site_id;
+  const blockValue =
+    (blockData as any)?.value?.value || (blockData as any)?.value || blockData;
+  const spaceId = blockValue?.space_id;
+  const siteId = blockValue?.format?.site_id;
 
   const apiBaseUrl = siteId
     ? `https://${siteId}.notion.site/api/v3`
@@ -275,8 +277,10 @@ export const fetchBlocks = async (
   notionToken?: string,
   blockData?: BlockType
 ) => {
-  const spaceId = blockData?.value?.space_id;
-  const siteId = blockData?.value?.format?.site_id;
+  const blockValue =
+    (blockData as any)?.value?.value || (blockData as any)?.value || blockData;
+  const spaceId = blockValue?.space_id;
+  const siteId = blockValue?.format?.site_id;
 
   const apiBaseUrl = siteId
     ? `https://${siteId}.notion.site/api/v3`

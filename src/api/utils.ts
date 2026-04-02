@@ -16,6 +16,22 @@ export const parsePageId = (id: string) => {
   }
 };
 
+export const getRecordValue = <T = any>(record: any): T => {
+  if (!record) {
+    return record;
+  }
+
+  if (record.value && record.value.value) {
+    return record.value.value as T;
+  }
+
+  if (record.value) {
+    return record.value as T;
+  }
+
+  return record as T;
+};
+
 export const getNotionValue = (
   val: DecorationType[],
   type: ColumnType,
@@ -67,7 +83,7 @@ export const getNotionValue = (
           );
 
           url.searchParams.set("table", "block");
-          url.searchParams.set("id", row.value.id);
+          url.searchParams.set("id", getRecordValue<any>(row).id);
           url.searchParams.set("cache", "v2");
 
           return { name: v[0] as string, url: url.toString(), rawUrl };
